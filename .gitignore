@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project Specific
+data/
+logs/
+downloads/
+data_backup_*/
+downloads_backup_*/
+*.log
+*.xlsx
+
+# IDE
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
