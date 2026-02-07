@@ -132,6 +132,111 @@ def migrate_folders():
             print(f"[ERROR] {folder_name} 처리 중 오류: {e}")
             
     print(f"마이그레이션 완료. {count}개 폴더 변경됨.")
+    
+    # 엑셀 파일 경로 업데이트 (절대 경로 -> 상대 경로, 폴더명 변경 반영)
+    update_excel_paths()
+
+def update_excel_paths():
+    print("엑셀 파일 내 첨부파일 경로 업데이트 시작...")
+    data_dir = config.DATA_DIR
+    if not os.path.exists(data_dir):
+        return
+
+    excel_files = [f for f in os.listdir(data_dir) if f.endswith('.xlsx') and not f.endswith('.backup.xlsx')]
+    
+    for excel_file in excel_files:
+        file_path = os.path.join(data_dir, excel_file)
+        try:
+            df = pd.read_excel(file_path)
+            start_modified = False
+            
+            if '첨부파일경로' not in df.columns:
+                continue
+
+            for idx, row in df.iterrows():
+                paths_str = str(row.get('첨부파일경로', ''))
+                if not paths_str or paths_str == 'nan':
+                    continue
+                
+                # 기존 경로들
+                old_paths = [p.strip() for p in paths_str.split(',')]
+                new_paths = []
+                
+                # 폴더명 재구성 (scraper.py 로직과 동일)
+                title = str(row['제목']).strip()
+                date_val = row['등록일']
+                if isinstance(date_val, datetime):
+                    date_str = date_val.strftime("%Y-%m-%d")
+                else:
+                    date_str = utils.normalize_date(str(date_val))
+                
+                if not date_str:
+                    new_paths = old_paths # 날짜 없으면 스킵
+                else:
+                    title_clean = re.sub(r'[\\/*?:"<>|]', "", title)
+                    expected_folder_name = f"{date_str}_{title_clean[:30].strip()}"
+                    
+                    # 각 파일별로 새 경로 생성
+                    for old_path in old_paths:
+                        if not old_path: continue
+                        
+                        # 파일명 추출 (기존 경로가 절대경로든 상대경로든)
+                        filename = os.path.basename(old_path)
+                        
+                        # 새 상대 경로: downloads/YYYY-MM-DD_Title/filename
+                        # config.DOWNLOAD_DIR이 data 폴더 상위에 있으므로
+                        # data 폴더 기준이 아닌, 프로젝트 루트(scraper.py 위치) 기준 상대 경로
+                        
+                        # downloads 폴더 이름이 config.DOWNLOAD_DIR의 마지막 부분이라 가정
+                        download_dir_name = os.path.basename(config.DOWNLOAD_DIR)
+                        new_rel_path = os.path.join(download_dir_name, expected_folder_name, filename)
+                        
+                        new_paths.append(new_rel_path)
+                
+                # 변경 확인
+                # 하이퍼링크 수식 생성: =HYPERLINK("상대경로", "표시텍스트")
+                # 표시 텍스트는 폴더명으로 설정
+                # 상대 경로: ..\downloads\YYYY-MM-DD_Title
+                
+                if new_paths:
+                    # 첫 번째 파일의 폴더 경로를 기준으로 함 (모두 같은 폴더에 있음)
+                    first_path = new_paths[0]
+                    # new_paths는 downloads\folder\file 형태 (data 폴더 상위 기준)
+                    # 엑셀 파일(data 폴더 내) 기준 상대 경로는 ..\downloads\folder\file
+                    
+                    # 폴더 경로 추출
+                    folder_path_rel_project = os.path.dirname(first_path) # downloads\folder
+                    folder_path_rel_excel = os.path.join("..", folder_path_rel_project) # ..\downloads\folder
+                    
+                    # 엑셀 수식 작성
+                    # 표시 텍스트: "📂 폴더 열기 (파일명1, 파일명2...)"
+                    display_text = f"📂 폴더 열기 ({', '.join([os.path.basename(p) for p in new_paths])})"
+                    # 엑셀 셀 글자수 제한 고려 (32767자, 수식은 더 짧을 수 있음)
+                    if len(display_text) > 200:
+                        display_text = f"📂 폴더 열기 ({len(new_paths)}개 파일)"
+                        
+                    hyperlink_formula = f'=HYPERLINK("{folder_path_rel_excel}", "{display_text}")'
+                    
+                    # 비교를 위해 단순 문자열로 변환하려 했으나 수식 자체가 값이므로
+                    # 기존 값이 수식이 아니거나, 수식이 다르다면 업데이트
+                    if paths_str != hyperlink_formula:
+                        df.at[idx, '첨부파일경로'] = hyperlink_formula
+                        start_modified = True
+                else:
+                     continue
+
+            if start_modified:
+                # 백업 생성
+                backup_path = file_path.replace('.xlsx', f'.backup_{datetime.now().strftime("%H%M%S")}.xlsx')
+                shutil.copy2(file_path, backup_path)
+                
+                df.to_excel(file_path, index=False, engine='openpyxl')
+                print(f"  - 업데이트 완료: {excel_file}")
+            else:
+                print(f"  - 변경 없음: {excel_file}")
+                
+        except Exception as e:
+            print(f"  - [오류] {excel_file} 처리 중 실패: {e}")
 
 if __name__ == "__main__":
     migrate_folders()

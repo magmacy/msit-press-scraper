@@ -251,9 +251,34 @@ class PressReleaseScraper:
                 fname, fpath = self.download_attachment(down_url, folder_name)
                 if fname:
                     attachments.append(fname)
-                    file_paths.append(fpath)
+                    # 절대 경로를 상대 경로로 변환 (프로젝트 루트 기준)
+                    rel_path = os.path.relpath(fpath, config.BASE_DIR)
+                    file_paths.append(rel_path)
                     downloaded_set.add(down_url)
             
+            # 첨부파일 경로를 하이퍼링크 수식으로 변환
+            # 엑셀 파일(data 폴더) 기준 상대 경로로 변환 필요
+            # rel_path는 현재 프로젝트 루트 기준임 (downloads/...)
+            # data 폴더 내부에서 downloads로 가려면 ../downloads/...
+            
+            if file_paths:
+                # 첫 번째 파일 기준 폴더 경로
+                # file_paths[0] = downloads\folder\file
+                folder_path_rel_project = os.path.dirname(file_paths[0]) # downloads\folder
+                folder_path_rel_excel = os.path.join("..", folder_path_rel_project)
+                
+                display_text = f"📂 폴더 열기 ({', '.join(attachments)})"
+                if len(display_text) > 200:
+                    display_text = f"📂 폴더 열기 ({len(attachments)}개 파일)"
+                    
+                hyperlink = f'=HYPERLINK("{folder_path_rel_excel}", "{display_text}")'
+                
+                # file_paths 리스트 대신 수식 문자열 저장
+                # 주의: 리스트가 아니라 문자열로 저장됨
+                final_paths = hyperlink
+            else:
+                final_paths = ""
+
             return {
                 '번호': ntt_id,
                 '제목': title,
@@ -263,7 +288,7 @@ class PressReleaseScraper:
                 '본문': content,
                 '핵심요약': summary,
                 '첨부파일목록': ", ".join(attachments),
-                '첨부파일경로': ", ".join(file_paths)
+                '첨부파일경로': final_paths
             }
             
         except Exception as e:
@@ -283,24 +308,24 @@ class PressReleaseScraper:
                 # 번호 기준 중복 제거 후 병합
                 combined_df = pd.concat([old_df, new_df]).drop_duplicates(subset=['번호'], keep='last')
                 try:
-                    combined_df.to_excel(self.output_file, index=False)
+                    combined_df.to_excel(self.output_file, index=False, engine='openpyxl')
                 except PermissionError:
                     # 파일이 열려있어서 저장이 안되는 경우
                     new_filename = self.output_file.replace(".xlsx", f"_backup_{datetime.now().strftime('%H%M%S')}.xlsx")
                     logger.warning(f"파일이 열려있어 저장할 수 없습니다. 백업 파일로 저장합니다: {new_filename}")
-                    combined_df.to_excel(new_filename, index=False)
+                    combined_df.to_excel(new_filename, index=False, engine='openpyxl')
             except Exception as e:
                 logger.error(f"데이터 병합 저장 중 오류: {e}")
                 # 병합 실패 시 현재 데이터라도 따로 저장
                 new_filename = self.output_file.replace(".xlsx", f"_partial_{datetime.now().strftime('%H%M%S')}.xlsx")
-                new_df.to_excel(new_filename, index=False)
+                new_df.to_excel(new_filename, index=False, engine='openpyxl')
         else:
             try:
-                new_df.to_excel(self.output_file, index=False)
+                new_df.to_excel(self.output_file, index=False, engine='openpyxl')
             except PermissionError:
                 new_filename = self.output_file.replace(".xlsx", f"_new_{datetime.now().strftime('%H%M%S')}.xlsx")
                 logger.warning(f"파일이 열려있어 저장할 수 없습니다. 새 파일로 저장합니다: {new_filename}")
-                new_df.to_excel(new_filename, index=False)
+                new_df.to_excel(new_filename, index=False, engine='openpyxl')
             
         logger.info(f"데이터 저장 완료: {self.output_file}")
         # 메모리 정리
